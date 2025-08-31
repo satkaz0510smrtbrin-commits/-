@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#111827">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <title>賞味期限 ▶ 限度開始/終了日 かんたん計算（PWA）</title>
+  <style>
+    :root { color-scheme: light; }
+    body { margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, 'Noto Sans', 'Apple Color Emoji', 'Segoe UI Emoji'; background:#f7fafc; }
+    .container { max-width: 680px; margin: 0 auto; padding: 16px; }
+    h1 { font-size: 22px; font-weight: 700; margin: 8px 0 12px; }
+    .card { background: #fff; border-radius: 16px; box-shadow: 0 6px 20px rgba(0,0,0,.06); }
+    .card-inner { padding: 16px; }
+    label { display:block; font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+    input, select, button { font-size: 16px; }
+    .input, .select { width: 100%; border: 1px solid #e5e7eb; border-radius: 12px; padding: 10px 12px; background: #fff; }
+    .row { display: grid; grid-template-columns: 1fr; gap: 10px; }
+    @media (min-width: 520px) {
+      .row.cols-5 { grid-template-columns: 1.2fr .8fr .8fr .8fr .4fr; }
+      .row.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+    }
+    .tile { border:1px solid #f1f5f9; border-radius: 14px; padding: 12px; }
+    .tile .label { color:#64748b; font-size: 12px; margin-bottom: 6px; }
+    .btn { border: 1px solid #e5e7eb; background:#fff; border-radius: 12px; padding: 10px 14px; }
+    .right { text-align: right; }
+    .muted { color:#6b7280; font-size: 12px; margin: 10px 6px; }
+    .flex { display:flex; gap:8px; align-items:center; }
+    .copy-btn { border:1px solid #e5e7eb; border-radius: 10px; padding:6px 8px; font-size: 12px; background:#fff; }
+    .badge { display:inline-block; padding: 6px 10px; border-radius: 12px; font-weight: 700; font-size: 14px; }
+    .badge.alert { background:#fee2e2; color:#b91c1c; }
+    .badge.warn { background:#fef3c7; color:#a16207; }
+    .badge.normal { background:#f3f4f6; color:#374151; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>賞味期限 ▶ 限度開始/終了日 かんたん計算（PWA）</h1>
+    <div class="card">
+      <div class="card-inner">
+        <!-- Expiry -->
+        <div>
+          <label>賞味（消費）期限</label>
+          <input id="expiry" type="date" class="input" placeholder="YYYY-MM-DD">
+        </div>
+
+        <!-- Start rule -->
+        <div class="row cols-5" style="margin-top:12px;">
+          <div>
+            <label>限度開始の単位</label>
+            <select id="startMode" class="select">
+              <option value="months">○か月＋○日 前</option>
+              <option value="days">○日 前</option>
+            </select>
+          </div>
+          <div>
+            <label class="muted">月</label>
+            <input id="startM" type="number" min="0" class="input" value="3">
+          </div>
+          <div>
+            <label class="muted">日</label>
+            <input id="startD" type="number" min="0" class="input" value="0">
+          </div>
+          <div></div><div></div>
+        </div>
+
+        <!-- End rule -->
+        <div class="row cols-5" style="margin-top:6px;">
+          <div>
+            <label>限度終了の単位</label>
+            <select id="endMode" class="select">
+              <option value="months">○か月＋○日 前</option>
+              <option value="days">○日 前</option>
+            </select>
+          </div>
+          <div>
+            <label class="muted">月</label>
+            <input id="endM" type="number" min="0" class="input" value="2">
+          </div>
+          <div>
+            <label class="muted">日</label>
+            <input id="endD" type="number" min="0" class="input" value="0">
+          </div>
+          <div></div><div></div>
+        </div>
+
+        <!-- Results -->
+        <div class="row cols-3" style="margin-top:12px;">
+          <div class="tile">
+            <div class="label">限度開始日</div>
+            <div class="flex">
+              <div id="startOut" style="font-weight:600;">-</div>
+              <button class="copy-btn" onclick="copyText('#startOut')">コピー</button>
+            </div>
+          </div>
+          <div class="tile">
+            <div class="label">限度終了日</div>
+            <div class="flex">
+              <div id="endOut" style="font-weight:600;">-</div>
+              <button class="copy-btn" onclick="copyText('#endOut')">コピー</button>
+            </div>
+          </div>
+          <div class="tile">
+            <div class="label">ステータス</div>
+            <div id="statusBadge" class="badge normal">-</div>
+          </div>
+        </div>
+
+        <div class="right" style="margin-top:12px;">
+          <button class="btn" onclick="resetAll()">リセット</button>
+        </div>
+      </div>
+    </div>
+    <p class="muted">・計算は「賞味期限から月→日を差し引く」順で行います（例：3か月＋10日前）。<br>・PWA：ホーム画面に追加してオフライン動作します。</p>
+  </div>
+
+  <script>
+    // --- calendar math (no external libs) ---
+    const $ = (sel) => document.querySelector(sel);
+    const pad = (n) => (n<10? '0'+n : ''+n);
+    const fmt = (d) => d ? `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}` : '-';
+    function daysInMonth(year, monthIndex0) { return new Date(year, monthIndex0 + 1, 0).getDate(); }
+    function subMonthsExact(base, months) {
+      const y = base.getFullYear(); const m0 = base.getMonth(); const d = base.getDate();
+      const total = y * 12 + m0 - months;
+      const ty = Math.floor(total / 12); const tm = total % 12;
+      const dim = daysInMonth(ty, tm); const td = Math.min(d, dim);
+      const result = new Date(ty, tm, td); result.setHours(0,0,0,0); return result;
+    }
+    function subDaysExact(base, days) { const r = new Date(base.getTime() - days*86400000); r.setHours(0,0,0,0); return r; }
+    function calcDate(base, mode, months, days) {
+      if (!(base instanceof Date) || isNaN(base)) return null;
+      months = Number.isFinite(months) ? months : 0; days = Number.isFinite(days) ? days : 0;
+      if (mode === 'months') { return subDaysExact(subMonthsExact(base, months), days); }
+      return subDaysExact(base, days);
+    }
+    function statusText(today, start, end) {
+      if (!start || !end) return '-';
+      const t0 = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      if (t0 > end) return 'アラート';
+      if (t0 >= start) return '注意';
+      return '正常';
+    }
+    function setStatusBadge(text) {
+      const el = $('#statusBadge');
+      el.textContent = text;
+      el.className = 'badge ' + (text === 'アラート' ? 'alert' : (text === '注意' ? 'warn' : 'normal'));
+    }
+    function copyText(id) { const txt = document.querySelector(id).textContent.trim(); navigator.clipboard && navigator.clipboard.writeText(txt).catch(()=>{}); }
+    function recalc() {
+      const expiryStr = $('#expiry').value;
+      const expiry = expiryStr ? new Date(expiryStr + 'T00:00:00') : null;
+      const startMode = $('#startMode').value;
+      const startMonths = parseInt($('#startM').value || '0', 10);
+      const startDays = parseInt($('#startD').value || '0', 10);
+      const endMode = $('#endMode').value;
+      const endMonths = parseInt($('#endM').value || '0', 10);
+      const endDays = parseInt($('#endD').value || '0', 10);
+      const startDate = expiry ? calcDate(expiry, startMode, startMonths, startDays) : null;
+      const endDate = expiry ? calcDate(expiry, endMode, endMonths, endDays) : null;
+      $('#startOut').textContent = fmt(startDate);
+      $('#endOut').textContent = fmt(endDate);
+      setStatusBadge(statusText(new Date(), startDate, endDate));
+    }
+    function resetAll() {
+      $('#expiry').value = '';
+      $('#startMode').value = 'months';
+      $('#startM').value = '3';
+      $('#startD').value = '0';
+      $('#endMode').value = 'months';
+      $('#endM').value = '2';
+      $('#endD').value = '0';
+      recalc();
+      window.scrollTo({top: 0, behavior: 'smooth'});
+    }
+    document.addEventListener('DOMContentLoaded', ()=>{
+      ['#expiry','#startMode','#startM','#startD','#endMode','#endM','#endD']
+        .forEach(sel => document.querySelector(sel).addEventListener('input', recalc));
+      recalc();
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.register("./sw.js").catch(()=>{});
+      }
+    });
+  </script>
+</body>
+</html>
